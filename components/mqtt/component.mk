@@ -1,20 +1,6 @@
-
-ifdef CONFIG_MQTT_USING_IBM
-COMPONENT_ADD_INCLUDEDIRS += ibm-mqtt/MQTTClient-C/src \
-                             ibm-mqtt/MQTTClient-C/src/FreeRTOS \
-                             ibm-mqtt/MQTTPacket/src
-
-COMPONENT_SRCDIRS += ibm-mqtt/MQTTClient-C/src \
-                     ibm-mqtt/MQTTClient-C/src/FreeRTOS \
-                     ibm-mqtt/MQTTPacket/src
-
-CFLAGS += -DMQTT_TASK
-else
-ifdef CONFIG_MQTT_USING_ESP
 COMPONENT_SUBMODULES += esp-mqtt
 COMPONENT_ADD_INCLUDEDIRS := esp-mqtt/include
 COMPONENT_SRCDIRS :=  esp-mqtt esp-mqtt/lib
 COMPONENT_PRIV_INCLUDEDIRS := esp-mqtt/lib/include
-endif
-endif
-
+#Due to RTOS version is lower than idf 4.0, so move some define in file mqtt_supported_features.h to here.
+CFLAGS += -DMQTT_SUPPORTED_FEATURE_WS_SUBPROTOCOL -DMQTT_SUPPORTED_FEATURE_TRANSPORT_ERR_REPORTING

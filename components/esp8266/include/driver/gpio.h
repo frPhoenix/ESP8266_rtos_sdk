@@ -57,7 +57,7 @@ extern "C" {
 #define GPIO_PIN_COUNT              17
 
 #define GPIO_IS_VALID_GPIO(gpio_num)      ((gpio_num < GPIO_PIN_COUNT))   /*!< Check whether it is a valid GPIO number */
-#define RTC_GPIO_IS_VALID_GPIO(gpio_num)     ((gpio_num <= 16))    /*!< Check whether it is a valid RTC GPIO number */
+#define RTC_GPIO_IS_VALID_GPIO(gpio_num)     ((gpio_num == 16))    /*!< Check whether it is a valid RTC GPIO number */
 
 typedef enum {
     GPIO_NUM_0 = 0,     /*!< GPIO0, input and output */

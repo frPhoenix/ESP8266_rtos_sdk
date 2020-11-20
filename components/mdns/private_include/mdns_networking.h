@@ -5,6 +5,8 @@
  * MDNS Server Networking -- private include
  * 
  */
+#include "mdns.h"
+#include "mdns_private.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -18,9 +20,8 @@
 #include "esp_wifi.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "esp_event_loop.h"
-#include "mdns.h"
-#include "mdns_private.h"
+#include "esp_event.h"
+
 
 /**
  * @brief  Queue RX packet action

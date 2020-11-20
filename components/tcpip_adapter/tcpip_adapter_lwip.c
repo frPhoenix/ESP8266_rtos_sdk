@@ -41,7 +41,7 @@
 #include "dhcpserver/dhcpserver.h"
 #include "dhcpserver/dhcpserver_options.h"
 #include "esp_log.h"
-#include "internal/esp_wifi_internal.h"
+#include "esp_private/wifi.h"
 
 #include "FreeRTOS.h"
 #include "timers.h"
@@ -79,6 +79,8 @@ static bool tcpip_inited = false;
 
 static const char* TAG = "tcpip_adapter";
 
+ESP_EVENT_DEFINE_BASE(IP_EVENT);
+
 /* Avoid warning. No header file has include these function */
 err_t ethernetif_init(struct netif* netif);
 void system_station_got_ip_set();
@@ -93,6 +95,7 @@ static void tcpip_adapter_dhcps_cb(u8_t client_ip[4])
                 client_ip[0],client_ip[1],client_ip[2],client_ip[3]);
     system_event_t evt;
     evt.event_id = SYSTEM_EVENT_AP_STAIPASSIGNED;
+    memcpy(&evt.event_info.ap_staipassigned.ip, client_ip, 4);
     esp_event_send(&evt);
 }
 
@@ -300,7 +303,7 @@ static void tcpip_adapter_dhcpc_done(TimerHandle_t xTimer)
 
     xTimerStop(dhcp_check_timer, 0);
     if (netif_is_up(esp_netif[TCPIP_ADAPTER_IF_STA])) {
-        if (clientdhcp->state == DHCP_STATE_BOUND
+        if ((clientdhcp && clientdhcp->state == DHCP_STATE_BOUND)
 #if LWIP_IPV4 && LWIP_AUTOIP
             || (autoip && autoip->state == AUTOIP_STATE_ANNOUNCING)
 #endif
@@ -374,6 +377,11 @@ esp_err_t tcpip_adapter_start(tcpip_adapter_if_t tcpip_if, uint8_t *mac, tcpip_a
             }
         }
         netif_add(esp_netif[tcpip_if], &ip_info->ip, &ip_info->netmask, &ip_info->gw, (void *)tcpip_if, ethernetif_init, tcpip_input);
+#if ESP_GRATUITOUS_ARP
+        if (tcpip_if == TCPIP_ADAPTER_IF_STA || tcpip_if == TCPIP_ADAPTER_IF_ETH) {
+            netif_set_garp_flag(esp_netif[tcpip_if]);
+        }
+#endif
     }
 
     if (tcpip_if == TCPIP_ADAPTER_IF_AP) {
@@ -388,6 +396,20 @@ esp_err_t tcpip_adapter_start(tcpip_adapter_if_t tcpip_if, uint8_t *mac, tcpip_a
                    IP2STR(&ip_info->ip), IP2STR(&ip_info->netmask), IP2STR(&ip_info->gw));
 
             dhcps_status = TCPIP_ADAPTER_DHCP_STARTED;
+        }
+    } else if (tcpip_if == TCPIP_ADAPTER_IF_STA) {
+        if (dhcpc_status[TCPIP_ADAPTER_IF_STA] != TCPIP_ADAPTER_DHCP_STARTED) {
+            if (esp_netif[tcpip_if] != NULL) {
+                struct dhcp *dhcp_data = NULL;
+                dhcp_data = netif_dhcp_data(esp_netif[tcpip_if]);
+                if (dhcp_data == NULL) {
+                    dhcp_data = (struct dhcp *)malloc(sizeof(struct dhcp));
+                    if (dhcp_data == NULL) {
+                        return ESP_ERR_NO_MEM;
+                    }
+                    dhcp_set_struct(esp_netif[tcpip_if], dhcp_data);
+                }
+            }
         }
     }
 
@@ -474,6 +496,12 @@ esp_err_t tcpip_adapter_down(tcpip_adapter_if_t tcpip_if)
             tcpip_adapter_reset_ip_info(tcpip_if);
         }
 
+#if TCPIP_ADAPTER_IPV6
+        for(int8_t i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+            netif_ip6_addr_set(esp_netif[tcpip_if], i, IP6_ADDR_ANY6);
+            netif_ip6_addr_set_state(esp_netif[tcpip_if], i, IP6_ADDR_INVALID);
+        }
+#endif
         netif_set_addr(esp_netif[tcpip_if], IP4_ADDR_ANY4, IP4_ADDR_ANY4, IP4_ADDR_ANY4);
         netif_set_down(esp_netif[tcpip_if]);
         tcpip_adapter_start_ip_lost_timer(tcpip_if);
@@ -579,6 +607,7 @@ esp_err_t tcpip_adapter_set_ip_info(tcpip_adapter_if_t tcpip_if, tcpip_adapter_i
                     evt.event_info.got_ip.ip_changed = true;
                 }
 
+                evt.event_info.got_ip.if_index = TCPIP_ADAPTER_IF_STA;
                 memcpy(&evt.event_info.got_ip.ip_info, ip_info, sizeof(tcpip_adapter_ip_info_t));
                 memcpy(&esp_ip_old[tcpip_if], ip_info, sizeof(tcpip_adapter_ip_info_t));
                 esp_event_send(&evt);
@@ -662,6 +691,28 @@ esp_err_t tcpip_adapter_get_ip6_linklocal(tcpip_adapter_if_t tcpip_if, ip6_addr_
     }
     return ESP_OK;
 }
+
+esp_err_t tcpip_adapter_get_ip6_global(tcpip_adapter_if_t tcpip_if, ip6_addr_t *if_ip6)
+{
+    struct netif *p_netif;
+    int i;
+
+    if (tcpip_if >= TCPIP_ADAPTER_IF_MAX || if_ip6 == NULL) {
+        return ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS;
+    }
+
+    p_netif = esp_netif[tcpip_if];
+    if (p_netif != NULL && netif_is_up(p_netif)) {
+        for (i = 1; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+            if (ip6_addr_ispreferred(netif_ip6_addr_state(p_netif, i))) {
+                memcpy(if_ip6, &p_netif->ip6_addr[i], sizeof(ip6_addr_t));
+                return ESP_OK;
+            }
+        }
+    }
+
+    return ESP_FAIL;
+}
 #endif
 
 esp_err_t tcpip_adapter_dhcps_option(tcpip_adapter_option_mode_t opt_op, tcpip_adapter_option_id_t opt_id, void *opt_val, uint32_t opt_len)
@@ -682,6 +733,7 @@ esp_err_t tcpip_adapter_dhcps_option(tcpip_adapter_option_mode_t opt_op, tcpip_a
             *(uint32_t *)opt_val = *(uint32_t *)opt_info;
             break;
         }
+        case SUBNET_MASK:
         case REQUESTED_IP_ADDRESS: {
             memcpy(opt_val, opt_info, opt_len);
             break;
@@ -717,6 +769,10 @@ esp_err_t tcpip_adapter_dhcps_option(tcpip_adapter_option_mode_t opt_op, tcpip_a
             } else {
                 *(uint32_t *)opt_info = DHCPS_LEASE_TIME_DEF;
             }
+            break;
+        }
+        case SUBNET_MASK: {
+            memcpy(opt_info, opt_val, opt_len);
             break;
         }
         case REQUESTED_IP_ADDRESS: {
@@ -914,7 +970,45 @@ esp_err_t tcpip_adapter_dhcps_stop(tcpip_adapter_if_t tcpip_if)
 
 esp_err_t tcpip_adapter_dhcpc_option(tcpip_adapter_option_mode_t opt_op, tcpip_adapter_option_id_t opt_id, void *opt_val, uint32_t opt_len)
 {
-    // TODO: when dhcp request timeout,change the retry count
+    struct netif *p_netif = esp_netif[TCPIP_ADAPTER_IF_STA];
+    if (p_netif == NULL) {
+        return ESP_ERR_TCPIP_ADAPTER_IF_NOT_READY;
+    }
+    struct dhcp *dhcp = netif_dhcp_data(p_netif);
+    if (dhcp == NULL || opt_val == NULL) {
+        return ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS;
+    }
+    if (opt_op == TCPIP_ADAPTER_OP_GET) {
+        if (dhcpc_status[TCPIP_ADAPTER_IF_STA] == TCPIP_ADAPTER_DHCP_STOPPED) {
+            return ESP_ERR_TCPIP_ADAPTER_DHCP_ALREADY_STOPPED;
+        }
+        switch (opt_id) {
+            case TCPIP_ADAPTER_IP_REQUEST_RETRY_TIME:
+                if (opt_len == sizeof(dhcp->tries)) {
+                    *(uint8_t *)opt_val = dhcp->tries;
+                }
+                break;
+            default:
+                return ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS;
+                break;
+        }
+    } else if (opt_op == TCPIP_ADAPTER_OP_SET) {
+        if (dhcpc_status[TCPIP_ADAPTER_IF_STA] == TCPIP_ADAPTER_DHCP_STARTED) {
+            return ESP_ERR_TCPIP_ADAPTER_DHCP_ALREADY_STARTED;
+        }
+        switch (opt_id) {
+            case TCPIP_ADAPTER_IP_REQUEST_RETRY_TIME:
+                if (opt_len == sizeof(dhcp->tries)) {
+                    dhcp->tries = *(uint8_t *)opt_val;
+                }
+                break;
+            default:
+                return ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS;
+                break;
+        }
+    } else {
+        return ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS;
+    }
     return ESP_OK;
 }
 
@@ -1189,11 +1283,11 @@ esp_err_t tcpip_adapter_get_hostname(tcpip_adapter_if_t tcpip_if, const char **h
     }
 
     p_netif = esp_netif[tcpip_if];
-    if (p_netif != NULL) {
+    if (p_netif != NULL && p_netif->hostname != NULL) {
         *hostname = p_netif->hostname;
         return ESP_OK;
     } else {
-        return ESP_ERR_TCPIP_ADAPTER_INVALID_PARAMS;
+        return ESP_ERR_TCPIP_ADAPTER_IF_NOT_READY;
     }
 #else
     return ESP_ERR_TCPIP_ADAPTER_IF_NOT_READY;
@@ -1214,28 +1308,6 @@ esp_err_t tcpip_adapter_get_netif(tcpip_adapter_if_t tcpip_if, void ** netif)
     return ESP_OK;
 }
 
-struct netif* ip4_route_src_hook(const ip4_addr_t* dest, const ip4_addr_t* src)
-{
-    extern struct netif *netif_list;
-    struct netif *netif = NULL;
-
-    /* destination IP is broadcast IP? */
-    if ((src != NULL) && !ip4_addr_isany(src)) {
-        /* iterate through netifs */
-        for (netif = netif_list; netif != NULL; netif = netif->next) {
-        /* is the netif up, does it have a link and a valid address? */
-            if (netif_is_up(netif) && netif_is_link_up(netif) && !ip4_addr_isany_val(*netif_ip4_addr(netif))) {
-                /* source IP matches? */
-                if (ip4_addr_cmp(src, netif_ip4_addr(netif))) {
-                    /* return netif on which to forward IP packet */
-                    return netif;
-                }
-            }
-        }
-    }
-    return netif;
-}
-
 bool tcpip_adapter_is_netif_up(tcpip_adapter_if_t tcpip_if)
 {
     if (esp_netif[tcpip_if] != NULL && netif_is_up(esp_netif[tcpip_if])) {
@@ -1243,6 +1315,14 @@ bool tcpip_adapter_is_netif_up(tcpip_adapter_if_t tcpip_if)
     } else {
         return false;
     }
+}
+
+int tcpip_adapter_get_netif_index(tcpip_adapter_if_t tcpip_if)
+{
+    if (tcpip_if >= TCPIP_ADAPTER_IF_MAX || esp_netif[tcpip_if] == NULL) {
+        return -1;
+    }
+    return netif_get_index(esp_netif[tcpip_if]);
 }
 
 #endif /* CONFIG_TCPIP_LWIP */

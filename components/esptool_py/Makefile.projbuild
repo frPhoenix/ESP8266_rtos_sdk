@@ -82,15 +82,11 @@ app-flash: $(APP_BIN) $(ESPTOOLPY_SRC) $(call prereq_if_explicit,erase_flash)
 	@echo "Flashing app to serial port $(ESPPORT), offset $(APP_OFFSET)..."
 	$(ESPTOOLPY_WRITE_FLASH) $(APP_OFFSET) $(APP_BIN)
 
-# Submodules normally added in component.mk, but can be added
-# at the project level as long as qualified path
-COMPONENT_SUBMODULES += $(COMPONENT_PATH)/esptool
-
 erase_flash:
 	@echo "Erasing entire flash..."
 	$(ESPTOOLPY_SERIAL) erase_flash
 
-MONITORBAUD ?= $(CONFIG_MONITOR_BAUD)
+MONITORBAUD ?= $(CONFIG_ESPTOOLPY_MONITOR_BAUD)
 
 MONITOR_PYTHON := $(PYTHON)
 
@@ -106,7 +102,7 @@ endif
 simple_monitor: $(call prereq_if_explicit,%flash)
 	$(MONITOR_PYTHON) -m serial.tools.miniterm --rts 0 --dtr 0 --raw $(ESPPORT) $(MONITORBAUD)
 
-MONITOR_OPTS := --baud $(MONITORBAUD) --port $(ESPPORT) --toolchain-prefix $(CONFIG_TOOLPREFIX) --make "$(MAKE)" --enable-time $(ENABLE_TIME) --enable-savelog $(ENABLE_SAVELOG)
+MONITOR_OPTS := --baud $(MONITORBAUD) --port $(ESPPORT) --toolchain-prefix $(CONFIG_SDK_TOOLPREFIX) --make "$(MAKE)"
 
 monitor: $(call prereq_if_explicit,%flash)
 	$(summary) MONITOR

@@ -28,9 +28,13 @@
 
 #include "esp_log.h"
 
-static const char *TAG = "heap_caps";
-extern heap_region_t g_heap_region[HEAP_REGIONS_MAX];
+extern heap_region_t g_heap_region[];
+
+static const char *TAG = "heap_init";
+size_t g_heap_region_num;
+#ifdef CONFIG_HEAP_TRACING
 int __g_heap_trace_mode = HEAP_TRACE_NONE;
+#endif
 
 /**
  * @brief Initialize regions of memory to the collection of heaps at runtime.
@@ -47,10 +51,6 @@ void esp_heap_caps_init_region(heap_region_t *region, size_t max_num)
             mem_end = (mem_blk_t *)((uint8_t *)mem_end - sizeof(void *));
         mem_end = (mem_blk_t *)((uint8_t *)mem_end - MEM_HEAD_SIZE);
 
-        ESP_EARLY_LOGV(TAG, "heap %d start from %p to %p total %d bytes, mem_blk from %p to %p total",
-                            num, region[num].start_addr, region[num].start_addr + region[num].total_size,
-                            region[num].total_size, mem_start, mem_end);
-
         mem_start->prev = NULL;
         mem_start->next = mem_end;
 
@@ -60,6 +60,7 @@ void esp_heap_caps_init_region(heap_region_t *region, size_t max_num)
         g_heap_region[num].free_blk = mem_start;
         g_heap_region[num].min_free_bytes = g_heap_region[num].free_bytes = blk_link_size(mem_start);
     }
+    g_heap_region_num = max_num;
 }
 
 /**
@@ -69,7 +70,7 @@ size_t heap_caps_get_free_size(uint32_t caps)
 {
     size_t bytes = 0;
 
-    for (int i = 0; i < HEAP_REGIONS_MAX; i++)
+    for (int i = 0; i < g_heap_region_num; i++)
         if (caps == (caps & g_heap_region[i].caps))
             bytes += g_heap_region[i].free_bytes;
 
@@ -83,7 +84,7 @@ size_t heap_caps_get_minimum_free_size(uint32_t caps)
 {
     size_t bytes = 0;
 
-    for (int i = 0; i < HEAP_REGIONS_MAX; i++)
+    for (int i = 0; i < g_heap_region_num; i++)
         if (caps == (caps & g_heap_region[i].caps))
             bytes += g_heap_region[i].min_free_bytes;
 
@@ -106,16 +107,20 @@ void IRAM_ATTR *_heap_caps_malloc(size_t size, uint32_t caps, const char *file, 
         ESP_EARLY_LOGV(TAG, "caller file %s line %d", file, line);
     }
 
-    for (num = 0; num < HEAP_REGIONS_MAX; num++) {
+    for (num = 0; num < g_heap_region_num; num++) {
         bool trace;
         size_t head_size;
 
-        if ((g_heap_region[num].caps & caps) != caps)
+        if ((g_heap_region[num].caps & caps) != caps) {
+            ESP_EARLY_LOGV(TAG, "caps in %x, num %d region %x @ %p", caps, num, g_heap_region[num].caps, &g_heap_region[num]);
             continue;
+        }
 
         _heap_caps_lock(num);
 
+#ifdef CONFIG_HEAP_TRACING
         trace = __g_heap_trace_mode == HEAP_TRACE_LEAKS;
+#endif
 
         mem_blk_size = ptr2memblk_size(size, trace);
 
@@ -236,7 +241,7 @@ void IRAM_ATTR _heap_caps_free(void *ptr, const char *file, size_t line)
 
     num = get_blk_region(ptr);
 
-    if (num >= HEAP_REGIONS_MAX) {
+    if (num >= g_heap_region_num) {
         ESP_EARLY_LOGE(TAG, "free(ptr_region=NULL)");
         return;
     }

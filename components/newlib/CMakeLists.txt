@@ -1,28 +1,31 @@
-set(COMPONENT_SRCDIRS newlib/port)
-set(COMPONENT_ADD_INCLUDEDIRS newlib/include newlib/port/include)
+set(include_dirs platform_include)
+set(srcs src/esp_malloc.c
+         src/locks.c
+         src/random.c
+         src/reent_init.c
+         src/select.c
+         src/syscall.c
+         src/termios.c
+         src/time.c)
 
+idf_component_register(SRCS "${srcs}"
+                    INCLUDE_DIRS "${include_dirs}"
+                    PRIV_REQUIRES esp8266 freertos)  
 
 if(CONFIG_NEWLIB_NANO_FORMAT)
-    set(LIBC c_nano)
+set(LIBC c_nano)
 else()
-    set(LIBC c)
+set(LIBC c)
 endif()
 
 set(LIBM m)
 
-set(COMPONENT_REQUIRES vfs)  # for sys/ioctl.h
+# Toolchain libraries require code defined in this component
+idf_component_get_property(newlib newlib COMPONENT_LIB)
+target_link_libraries(${COMPONENT_LIB} INTERFACE ${LIBC} ${LIBM} gcc "$<TARGET_FILE:${newlib}>")
 
-register_component()
+# Forces the linker to include __errno from this component,
+# instead of the implementations provided by newlib.
+set(EXTRA_LINK_FLAGS "-u __errno")
+target_link_libraries(${COMPONENT_LIB} INTERFACE "${EXTRA_LINK_FLAGS}")
 
-target_compile_definitions(newlib PUBLIC
-    -D_CLOCKS_PER_SEC_=CONFIG_FREERTOS_HZ -D_POSIX_THREADS=1 -D_UNIX98_THREAD_MUTEX_ATTRIBUTES=1
-    )
-
-if(CONFIG_ENABLE_PTHREAD)
-    target_compile_definitions(newlib PUBLIC
-        -D_POSIX_THREADS=1 -D_UNIX98_THREAD_MUTEX_AT
-        )
-endif()
-
-target_link_libraries(newlib "-L ${CMAKE_CURRENT_SOURCE_DIR}/newlib/lib")
-target_link_libraries(newlib "${LIBC}" "${LIBM}")

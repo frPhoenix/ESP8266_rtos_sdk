@@ -46,7 +46,6 @@ static QueueHandle_t uart0_queue;
 static void uart_event_task(void *pvParameters)
 {
     uart_event_t event;
-    size_t buffered_size;
     uint8_t *dtmp = (uint8_t *) malloc(RD_BUF_SIZE);
 
     for (;;) {
@@ -121,7 +120,7 @@ void app_main()
     uart_param_config(EX_UART_NUM, &uart_config);
 
     // Install UART driver, and get the queue.
-    uart_driver_install(EX_UART_NUM, BUF_SIZE * 2, BUF_SIZE * 2, 100, &uart0_queue);
+    uart_driver_install(EX_UART_NUM, BUF_SIZE * 2, BUF_SIZE * 2, 100, &uart0_queue, 0);
 
     // Create a task to handler UART event from ISR
     xTaskCreate(uart_event_task, "uart_event_task", 2048, NULL, 12, NULL);

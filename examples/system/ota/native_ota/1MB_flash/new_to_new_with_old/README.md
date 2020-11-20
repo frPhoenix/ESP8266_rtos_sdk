@@ -101,6 +101,13 @@ Configurate the flash size:
             (X) 1 MB
 ```
 
+If you want to connect to the original AP of old SDK, then configurate as following:
+
+```
+    Example Configuration  --->
+        [*] Connect to the original AP 
+```
+
 Save your changes, and type `make ota` to build the example to generate the real OTA binary firmware.
 
 The name of final generated binary firmware is `ota.v2_to_v3.ota.bin` and the binary firmware locates at directory of `build`.
@@ -152,7 +159,7 @@ When the example starts up, it will print "ota: Starting OTA example..." then:
 
 * Check whether your PC can ping the ESP8266 at its IP, and make sure that the IP, AP and other configuration settings are correct in menuconfig.
 * Check if there is any firewall software on the PC that prevents incoming connections.
-* Check whether you can see the configured file (default project_template.ota.bin) when browsing the file listing at http://127.0.0.1/
+* Check whether you can see the configured file (default hello_world.ota.bin) when browsing the file listing at http://127.0.0.1/
 * If you have another PC or a phone, try viewing the file listing from the separate host.
 
 ## Error "ota_begin error err=0x104"

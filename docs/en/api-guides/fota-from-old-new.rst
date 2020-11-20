@@ -68,7 +68,7 @@ Connect your host PC and the ESP8266 to the same AP.
 Step 2: Configure and Build
 -----------------------------
 
-Here, we use the `SP8266_RTOS_SDK/examples/system/ota <https://github.com/espressif/ESP8266_RTOS_SDK/tree/master/examples/system/ota>`_ example.
+Here, we use the :example:`system/ota/native_ota/1MB_flash/new_to_new_with_old` if flash is 1MB or :example:`system/ota/native_ota/2+MB_flash/new_to_new_with_old` if flash is 2MB or larger.
 
 Open a new terminal on your PC, set the following configurations, and then compile the example:
 
@@ -111,13 +111,24 @@ Configure the flash size according to your actual development board's flash.
         (mypassword) WiFi Password
         (192.168.0.3) HTTP Server IP
         (8070)HTTP Server Port
-        (/project_template.ota.bin) HTTP GET Filename
+        (/hello_world.ota.bin) HTTP GET Filename
 
 - WiFi SSID: Wi-Fi SSID of router
 - WiFi Password: Wi-Fi password of router
 - HTTP Server IP: It may be the PC's IP address
 - HTTP Server Port: HTTP server port
 - HTTP GET Filename: Using "ota.ota.bin" which is the target firmware of the example
+
+5. Select connecting to the original AP 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If users want to connect to the original AP of old SDK, then configurate as following:
+
+::
+
+    Example Configuration  --->
+        [*] Connect to the original AP 
+
 
 5. Build the project
 ^^^^^^^^^^^^^^^^^^^^
@@ -150,3 +161,10 @@ Note
 
 - This "unpacking workflow" will only be executed when it is an old SDK firmware that upgrade to the new SDK firmware, for example, V2.0 upgrade to V3.1. After that, the FOTA in later versions (for example, V3.1 upgrade to later) will be the `normal FOTA workflow <https://github.com/espressif/ESP8266_RTOS_SDK/blob/master/examples/system/ota/README.md>`_.
 
+Inheritance Data
+================
+
+Users can perfer to the source code :example_file:`system/ota/native_ota/2+MB_flash/new_to_new_with_old/main/ota_example_main.c` to check
+how to load original AP's information.
+
+See structure **old_sysconf** in the file of :component_file:`esp8266/include/internal/esp_system_internal.h` for the organization of this information.
